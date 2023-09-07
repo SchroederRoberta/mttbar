@@ -6,13 +6,14 @@ Custom base tasks.
 import luigi
 import law
 
+from columnflow.tasks.framework.base import Requirements
 from columnflow.tasks.framework.plotting import PlotBase
 from columnflow.tasks.plotting import PlotVariablesBaseSingleShift
 
 from mtt.tasks.base import MTTTask
 
 
-class PlotROCCurve(
+class PlotROCCurveBase(
     MTTTask,
     PlotVariablesBaseSingleShift,
     PlotBase,
@@ -27,13 +28,14 @@ class PlotROCCurve(
     the *processes* parameter.
     """
 
+    # upstream requirements
+    reqs = Requirements(
+        PlotVariablesBaseSingleShift.reqs,
+    )
+
     plot_function = PlotBase.plot_function.copy(
         default="mtt.plotting.plot_roc_curve.plot_roc_curve",
         add_default_to_description=True,
-    )
-
-    signal_tag = luigi.Parameter(
-        description="datasets marked with this tag are considered signal, otherwise background",
     )
 
     def output(self):
@@ -45,6 +47,12 @@ class PlotROCCurve(
         output["data"] = self.target(f"data__{branch_repr}.json")
 
         return output
+
+    def get_hists_key(self, dataset_inst):
+        return None
+
+    def process_hists(self, hists):
+        return hists
 
     @law.decorator.log
     @law.decorator.localize(input=True, output=False)
@@ -112,11 +120,7 @@ class PlotROCCurve(
                 h = h[{"process": sum, "category": sum}]
 
                 # add the histogram
-                hists_key = (
-                    "signal"
-                    if dataset_inst.has_tag(self.signal_tag)
-                    else "background"
-                )
+                hists_key = self.get_hists_key(dataset_inst)
                 if hists_key in hists:
                     hists[hists_key] += h
                 else:
@@ -129,6 +133,9 @@ class PlotROCCurve(
                     "  - requested variable requires columns that were missing during histogramming\n" +
                     "  - selected --processes did not match any value on the process axis of the input histogram",
                 )
+
+            # post-process histograms
+            hists = self.process_hists(hists)
 
             # call the plot function
             fig, axs, data = self.call_plot_func(
@@ -145,3 +152,77 @@ class PlotROCCurve(
 
             # save the ROC curve data
             self.output()["data"].dump(data, formatter="json")
+
+
+class PlotROCCurveByDatasetTag(
+    PlotROCCurveBase
+):
+    """
+    Calculate and plot the ROC curve (background rejection vs. signal efficiency) resulting
+    from a cut on discriminating variables.
+
+    Accepts multiple *datasets*, which are classed into signal or background depending on the
+    presence of a tag ``signal_tag`` of the underlying :py:class:`order.Datasets` instance. The
+    choice of datasets considered for the ROC curve measurement may further be restricted by
+    setting the *processes* parameter.
+    """
+
+    signal_tag = luigi.Parameter(
+        description="datasets marked with this tag are considered signal, otherwise background",
+    )
+
+    def get_hists_key(self, dataset_inst):
+        return (
+            "signal"
+            if dataset_inst.has_tag(self.signal_tag)
+            else "background"
+        )
+
+    def process_hists(self, hists):
+        return hists
+
+
+class PlotROCCurveByVariable(
+    PlotROCCurveBase
+):
+    """
+    Calculate and plot the ROC curve (background rejection vs. signal efficiency) resulting
+    from a cut on discriminating variables.
+
+    An event is identified as a signal event based on the value of the variable ``signal_variable``.
+
+    Accepts multiple *datasets*. The choice of datasets considered for the ROC curve measurement
+    may further be restricted by setting the *processes* parameter.
+    """
+
+    signal_variable = luigi.Parameter(
+        description="events where this variable is 0 (1) are considered background (signal)",
+    )
+
+    @classmethod
+    def resolve_param_values(cls, params: dict) -> dict:
+        params = super().resolve_param_values(params)
+
+        # add `signal_variables` to variables for histograms
+        if "variables" in params:
+            if len(params["variables"]) != 1:
+                raise ValueError(f"only 1 variable supported, got {len(params['variables'])}")
+            discriminant_variable = params["variables"][0]
+            signal_variable = params["signal_variable"]
+            if not discriminant_variable.endswith(f"-{signal_variable}"):
+                params["variables"] = law.util.make_tuple(f"{discriminant_variable}-{signal_variable}")
+
+        return params
+
+    def get_hists_key(self, dataset_inst):
+        return "all"
+
+    def process_hists(self, hists):
+        """Split 'all' histogram into signal and background."""
+        import hist
+        hists_key = self.get_hists_key(None)
+        h = hists[hists_key]
+        return {
+            "signal": h[{self.signal_variable: hist.loc(1)}],
+            "background": h[{self.signal_variable: hist.loc(0)}],
+        }

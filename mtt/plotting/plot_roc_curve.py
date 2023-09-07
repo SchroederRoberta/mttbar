@@ -35,13 +35,21 @@ def plot_roc_curve(
     **kwargs,
 ) -> plt.Figure:
     """
-    Given two `hists` with identical binning and containing signal and background
-    event counts for signal and background, compute the corresponding ROC curve
-    showing the background rejection as a function of the background rejection.
+    Given a dictionary of *hists* with identical binning, compute the corresponding ROC curve
+    showing the background rejection as a function of the signal efficiency.
+
+    *hists* should contain the keys *signal* and *background*, which should correspond to the
+    distribution of the discriminating variable for signal and background events, respectively.
     """
 
     # remove residual `shift` axis
     remove_residual_axis(hists, "shift")
+
+    if "signal" not in hists or "background" not in hists:
+        hists_keys_str = ", ".join(hists)
+        print(
+            f"WARNING: `hists` should contain the keys 'signal' and 'background', got: {hists_keys_str}"
+        )
 
     # plot config with a single entry for drawing the ROC curve
     plot_config = {

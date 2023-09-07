@@ -256,6 +256,12 @@ def add_variables(config: od.Config) -> None:
 
     # gen variables
     config.add_variable(
+        name="gen_ttbar_is_semileptonic",
+        expression="GenTTbar.is_semileptonic",
+        binning=[-0.5, 0.5, 1.5],
+        x_title=r"Gen-level semileptonic ${t}\overline{t}$ indicator",
+    )
+    config.add_variable(
         name="gen_ttbar_mass",
         expression="TTbar.gen_mass",
         binning=config.get_variable("ttbar_mass").binning,

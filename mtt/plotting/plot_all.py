@@ -31,8 +31,6 @@ def draw_roc_curve(
     **kwargs,
 ) -> None:
 
-    if len(hists) != 2:
-        raise ValueError(f"expected 2 histograms for ROC curve, got {len(hists)}")
 
     # obtain ROC curve support points
     # from histogram bin edges
@@ -42,6 +40,7 @@ def draw_roc_curve(
     # thresholds for the for the supplied histograms
     totals, passes = {}, {}
     pass_fractions = {}
+
     for key, h in hists.items():
         totals[key] = h.sum(flow=True).value
         passes[key] = np.array([
@@ -69,9 +68,20 @@ def draw_roc_curve(
             for key in hists
         }
 
+    # obtain signal and background pass fractions 
+    pass_fraction_signal = pass_fractions.get("signal", 0.0)
+    pass_fraction_background = pass_fractions.get("background", 0.0)
+
+    # broadcast to ensure shape compatibility
+    pass_fraction_signal, pass_fraction_background = np.broadcast_arrays(
+        pass_fraction_signal,
+        pass_fraction_background,
+    )
+
+    # plot and return artist
     return ax.plot(
-        pass_fractions["signal"],
-        pass_fractions["background"],
+        pass_fraction_signal,
+        pass_fraction_background,
         **plot_kwargs,
     )
 
